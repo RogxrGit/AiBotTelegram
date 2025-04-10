@@ -2,13 +2,13 @@ require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
-// Configuração do bot
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 
 const GROUP_ID = process.env.GROUP_ID;
 const INTERVALO_MINUTOS = 10;
 
-// Função para buscar e enviar vídeos de Lofi
+const videosEnviados = new Set();
+
 async function enviarLofiMusic() {
   try {
     const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
@@ -16,21 +16,38 @@ async function enviarLofiMusic() {
         part: 'snippet',
         q: 'lofi music',
         type: 'video',
-        maxResults: 1,
-        order: 'date', // busca os mais recentes
+        maxResults: 5,
+        order: 'date',
         key: process.env.YOUTUBE_API_KEY
       }
     });
 
-    const video = response.data.items[0];
-    const title = video.snippet.title;
-    const videoId = video.id.videoId;
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const videos = response.data.items;
+    const novoVideo = videos.find(v => !videosEnviados.has(v.id.videoId));
 
-    await bot.sendMessage(GROUP_ID, `🎵 *${title}*\n▶️ ${url}`, {
-      parse_mode: 'Markdown'
+    if (!novoVideo) {
+      console.log('⚠️ Nenhum vídeo novo encontrado no momento.');
+      return;
+    }
+
+    const { title, thumbnails } = novoVideo.snippet;
+    const videoId = novoVideo.id.videoId;
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const thumbUrl = thumbnails.high.url;
+
+    await bot.sendPhoto(GROUP_ID, thumbUrl, {
+      caption: `🎵 <b>${title}</b>`,
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '▶️ Assistir no YouTube', url: videoUrl }
+          ]
+        ]
+      }
     });
 
+    videosEnviados.add(videoId);
     console.log(`✅ Vídeo postado: ${title}`);
 
   } catch (error) {
@@ -38,9 +55,7 @@ async function enviarLofiMusic() {
   }
 }
 
-// Inicia o intervalo automático
-setInterval(enviarLofiMusic, INTERVALO_MINUTOS * 60 * 1000);
-
-// Primeira execução ao iniciar o bot
+// Executar e agendar
 enviarLofiMusic();
-console.log(`🎧 Bot Lofi rodando! Vai sugerir músicas a cada ${INTERVALO_MINUTOS} minutos.`);
+setInterval(enviarLofiMusic, INTERVALO_MINUTOS * 60 * 1000);
+console.log(`🎧 Bot Lofi ativo! Postando a cada ${INTERVALO_MINUTOS} minutos.`);
